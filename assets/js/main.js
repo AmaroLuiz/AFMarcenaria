@@ -56,6 +56,7 @@
   initMenu();
   initAnchors();
   initForm();
+  primeProjectImages();
 
   if (hasGSAP) {
     try {
@@ -68,6 +69,20 @@
     root.classList.remove('motion');
   }
 
+
+  /* Fotos dos projetos: no trilho horizontal elas ficam fora da tela na lateral,
+     onde o lazy loading nativo pode atrasar. Ao se aproximar da seção, carrega todas. */
+  function primeProjectImages() {
+    const section = $('.projects');
+    if (!section) return;
+    const imgs = $$('.project__frame img', section);
+    const load = () => imgs.forEach((img) => { img.loading = 'eager'; });
+    if (!('IntersectionObserver' in window)) { load(); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { load(); io.disconnect(); }
+    }, { rootMargin: '150% 0px 150% 0px' });
+    io.observe(section);
+  }
 
   function setYear() {
     const year = String(new Date().getFullYear());
@@ -100,12 +115,15 @@
     nav.addEventListener('focusin', () => nav.classList.remove('is-hidden'));
   }
 
-  /* Menu em tela cheia (celular/tablet): foco preso, Esc fecha, rolagem travada. */
+  /* Menu em tela cheia (celular/tablet), padrão disclosure: o botão da nav abre e fecha,
+     o conteúdo atrás fica inerte, o foco fica preso no menu, Esc fecha. */
   function initMenu() {
     const toggle = $('.nav__toggle');
     const menu = $('#menu');
     if (!toggle || !menu) return;
 
+    const background = [$('main'), $('.footer'), $('.skip-link')].filter(Boolean);
+    const setBackgroundInert = (value) => background.forEach((el) => { el.inert = value; });
     const focusables = () => [toggle, ...$$('a, button', menu)];
 
     const onKeydown = (e) => {
@@ -120,6 +138,7 @@
 
     function open() {
       menu.inert = false;
+      setBackgroundInert(true);
       menu.classList.add('is-open');
       root.classList.add('menu-open');
       toggle.setAttribute('aria-expanded', 'true');
@@ -135,6 +154,7 @@
       menu.classList.remove('is-open');
       root.classList.remove('menu-open');
       menu.inert = true;
+      setBackgroundInert(false);
       toggle.setAttribute('aria-expanded', 'false');
       toggle.setAttribute('aria-label', 'Abrir menu');
       if (lenis) lenis.start();
@@ -511,7 +531,8 @@
 
     const imgReady = img && img.decode ? img.decode().catch(() => {}) : Promise.resolve();
     const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
-    const timeout = new Promise((resolve) => setTimeout(resolve, 2200));
+    // Em conexão lenta a entrada não espera mais que isso: o CTA precisa chegar cedo.
+    const timeout = new Promise((resolve) => setTimeout(resolve, 1400));
 
     Promise.race([Promise.all([imgReady, fontsReady]), timeout]).then(() => {
       ctx.add(() => {
@@ -531,15 +552,16 @@
           },
         });
 
+        // Uma abertura lenta, mas com o CTA disponível em cerca de 2 s.
         tl.fromTo(media,
           { clipPath: small ? 'inset(16% 12% 16% 12%)' : 'inset(24% 33% 24% 33%)' },
-          { clipPath: 'inset(0% 0% 0% 0%)', duration: small ? 1.5 : 1.9, ease: 'expo.inOut' }, 0)
-          .fromTo(img, { scale: 1.45 }, { scale: 1, duration: small ? 2 : 2.6, ease: 'expo.inOut' }, 0)
-          .from(eyebrow, { yPercent: 60, opacity: 0, duration: 1.2 }, small ? 0.9 : 1.2)
-          .from(lineTargets, { yPercent: 118, duration: 1.4, stagger: 0.1 }, small ? 0.95 : 1.25)
-          .fromTo(panel, { yPercent: 101 }, { yPercent: 0, duration: 1.3, ease: 'expo.inOut', clearProps: 'transform' }, small ? 0.9 : 1.15)
+          { clipPath: 'inset(0% 0% 0% 0%)', duration: small ? 1.4 : 1.7, ease: 'expo.inOut' }, 0)
+          .fromTo(img, { scale: 1.45 }, { scale: 1, duration: small ? 1.9 : 2.4, ease: 'expo.inOut' }, 0)
+          .from(eyebrow, { yPercent: 60, opacity: 0, duration: 1.2 }, small ? 0.8 : 1.0)
+          .from(lineTargets, { yPercent: 118, duration: 1.4, stagger: 0.1 }, small ? 0.85 : 1.05)
+          .fromTo(panel, { yPercent: 101 }, { yPercent: 0, duration: 1.2, ease: 'expo.inOut', clearProps: 'transform' }, small ? 0.8 : 0.95)
           .from(panel.children, { y: 24, opacity: 0, duration: 1.1, stagger: 0.08, clearProps: 'transform,opacity' }, '>-0.55')
-          .from(nav, { yPercent: -100, opacity: 0, duration: 1.2, clearProps: 'transform,opacity' }, small ? 1.1 : 1.5);
+          .from(nav, { yPercent: -100, opacity: 0, duration: 1.2, clearProps: 'transform,opacity' }, small ? 1.0 : 1.25);
 
         gsap.set([media, title, panel, nav], { visibility: 'visible' });
         root.classList.remove('motion');
@@ -718,7 +740,20 @@
 
     const offCursor = initCursor(section, pin, tween.scrollTrigger);
 
+    // Teclado: ao focar algo dentro do trilho (ex.: o botão final), rola a página até
+    // a posição horizontal correspondente, em vez de deixar o foco fora da tela.
+    const onFocusIn = (e) => {
+      if (!track.contains(e.target)) return;
+      const st = tween.scrollTrigger;
+      const x = e.target.getBoundingClientRect().left - track.getBoundingClientRect().left;
+      const target = st.start + gsap.utils.clamp(0, distance(), x - window.innerWidth * 0.3);
+      if (lenis) lenis.scrollTo(target, { immediate: true });
+      else window.scrollTo(0, target);
+    };
+    pin.addEventListener('focusin', onFocusIn);
+
     return () => {
+      pin.removeEventListener('focusin', onFocusIn);
       offCursor();
       section.classList.remove('is-horizontal');
       if (bar) bar.style.transform = '';
@@ -781,6 +816,7 @@
     section.classList.add('has-cursor');
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     window.addEventListener('blur', onUp);
     pin.addEventListener('pointerdown', onDown);
     frames.forEach((f) => {
@@ -793,6 +829,7 @@
       cursor.classList.remove('is-active', 'is-pressed');
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       window.removeEventListener('blur', onUp);
       pin.removeEventListener('pointerdown', onDown);
       frames.forEach((f) => {
